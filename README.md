@@ -1,4 +1,4 @@
-# Ledyard-Bridge-Construction
+# Ledyard Bridge Construction
 
 ## Solution
 
@@ -42,7 +42,7 @@ The synchronization is primarily handled by ```acquire_bridge``` and ```exit_bri
 
 At the start of ```acquire_bridge```, the current thread attempts to acquire the mutex. If not successful, it uses the cvar corresponding to the direction it's trying to go to wait for the lock to be available. Once it successfully acquires the lock, it checks that the bridge is neither full nor has cars travelling in the opposite direction. If either of these conditions are not met, the thread releases the lock and waits for it to be ready again. Notice that these read operations happen after the lock if acquired. 
 
-Once the thread acquires the lock, (1) checks that the bridge direction matches its own and that the bridge is not full, returning non-zero if either condition is not met, (2) increments the bridge's current car count, (3) calls ```on_bridge``` to print the current state of the bridge, (4) releases the lock, (5) sleeps for 1 second to simulate crossing the bridge, (5) pokes the appropriate cvars (explained Liveness section). 
+Once the thread acquires the lock, it (1) checks that the bridge direction matches its own and that the bridge is not full, returning non-zero if either condition is not met, (2) increments the bridge's current car count, (3) calls ```on_bridge``` to print the current state of the bridge, (4) releases the lock, (5) sleeps for 1 second to simulate crossing the bridge, (6) pokes the appropriate cvars (explained Liveness section). 
 
 ```exit_bridge``` similarly attempts to acquire the lock for the current thread, using a cvar to minimize spinning. Once the thread gets the lock, it decrements the bridge's car count and pokes the appropriate cvars.
 
