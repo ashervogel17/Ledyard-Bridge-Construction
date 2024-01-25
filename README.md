@@ -65,6 +65,8 @@ With this logic in place, there shouldn't be any liveness issues. This is confir
 ## Usage
 
 ```
+git clone git@github.com:ashervogel17/Ledyard-Bridge-Construction.git
+cd Ledyard-Bridge-Construction
 gcc -o ./bridge driver.c
 ./bridge <TOTAL_NUM_CARS> <MAX_CARS_ON_BRIDGE>
 ```
