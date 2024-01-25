@@ -104,6 +104,7 @@ void on_bridge(car_t* car) {
   // Double check that bridge direction matches current car direction
   if (bridge->direction != car->direction) {
     printf("Crossing car's direction does not match bridge's direction.\n");
+    exit(1);
   }
 
   // Print state of current car and bridge
@@ -161,6 +162,7 @@ void acquire_bridge(car_t* car) {
   // Double-check that conditions are not broken. Print out if conditions are violated.
   if (bridge->current_num_cars > bridge->max_num_cars) {
     printf("The bridge just collapsed :( \n");
+    exit(1);
   }
   if (bridge->direction != car->direction) {
     // If car is the first onto the bridge, make sure bridge direction is set correctly.
@@ -169,6 +171,7 @@ void acquire_bridge(car_t* car) {
     }
     else {
       printf("Head-on collision just happended :( \n");
+      exit(1);
     }
   }
 
@@ -208,11 +211,13 @@ void exit_bridge(car_t* car) {
   // Double-check that the bridge is not already empty
   if (bridge->current_num_cars == 0) {
     printf("You're trying to exit a car when the bridge is already empty!\n");
+    exit(1);
   }
 
   // Double-check that bridge direction matches car's direction
   if (bridge->direction != car->direction) {
     printf("Exiting car's direction does not match bridge's direction.\n");
+    exit(1);
   }
 
   // Decrement bridge's current car count
