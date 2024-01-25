@@ -7,6 +7,8 @@
 #define DIRECTION_TO_NORWICH 0
 #define DIRECTION_TO_HANOVER 1
 
+// Return 0 iff argc = 3 and argv[1] and arv[2] are integers
+// Returns -1 with error message otherwise
 int validate_params(int argc, char* argv[]) {
   if (argc != 3) {
     fprintf(stderr, "Invalid Usage. Correct usage:\n%s <number of cars> <max cars on bridge>\n", argv[0]);
@@ -28,6 +30,8 @@ int validate_params(int argc, char* argv[]) {
   return 0;
 }
 
+// Copy string representation of direction into buffer and return 0 if direction is 0 or 1
+// Copies empty string into buffer and returns -1 if direction is neither 0 nor 1
 int get_direction(int direction, char* buffer) {
   if (direction == DIRECTION_TO_HANOVER) {
     strcpy(buffer, "to Hanover");
@@ -43,6 +47,7 @@ int get_direction(int direction, char* buffer) {
   return 0;
 }
 
+// Structure to represent bridge
 typedef struct bridge {
   int max_num_cars;
   int current_num_cars;
@@ -53,15 +58,14 @@ typedef struct bridge {
   pthread_cond_t exit_bridge_cvar;
 } bridge_t;
 
-
+// Structure to represent a car crossing the bridge
 typedef struct car {
   int thread_id;
   int direction;
 } car_t;
 
-bridge_t* bridge;
-
-
+// Allocate memory for a new bridge structure and intialize attributes.
+// Caller is responsible for calling free(bridge)!
 bridge_t* new_bridge(int max_num_cars) {
   bridge_t* bridge = (bridge_t*) malloc(sizeof(bridge_t));
   if (bridge == NULL) {
@@ -74,9 +78,11 @@ bridge_t* new_bridge(int max_num_cars) {
   bridge->lock = (pthread_mutex_t) PTHREAD_MUTEX_INITIALIZER;
   bridge->enter_to_hanover_cvar = (pthread_cond_t) PTHREAD_COND_INITIALIZER;
   bridge->enter_to_norwich_cvar = (pthread_cond_t) PTHREAD_COND_INITIALIZER;
+  bridge->exit_bridge_cvar = (pthread_cond_t) PTHREAD_COND_INITIALIZER;
 }
 
-// Caller must free memory!
+// Allocate memory for a new car structure and intialize attributes.
+// Caller is responsible for calling free(car)!
 car_t* new_car(int thread_id, int direction) {
   car_t* car = (car_t*) malloc(sizeof(car_t));
   if (car == NULL) {
@@ -88,6 +94,38 @@ car_t* new_car(int thread_id, int direction) {
   return car;
 }
 
+// Global variable to store bridge structure
+// Memory is allocated and freed from main()
+bridge_t* bridge;
+
+// Call this function when a car gets on the bridge
+// Caller is expected to have the bridge's mutex
+void on_bridge(car_t* car) {
+  // Double check that bridge direction matches current car direction
+  if (bridge->direction != car->direction) {
+    printf("Crossing car's direction does not match bridge's direction.\n");
+  }
+
+  // Print state of current car and bridge
+  int car_id = car->thread_id;
+  char car_direction[20];
+  get_direction(car->direction, car_direction);
+  int num_cars = bridge->current_num_cars;
+  char bridge_direction[20];
+  get_direction(bridge->direction, bridge_direction);
+  printf("Car #%d is on the bridge going %s. There are %d cars on the bridge going %s.\n", car_id, car_direction, num_cars, bridge_direction);
+  fflush(stdout);
+}
+
+// Current threads attempt to lock the bridge mutex.
+// If the bridge is full or traffic is flowing the wrong way, the mutex is unlocked and caller tries again.
+// Once the mutex is acquired and the bridge is safe for crossing, 
+//  increment the bridge car count and make sure the direction is set correctly
+// Call on_bridge()
+// Release the mutex
+// Sleep for 1 second to simulate crossing the bridge
+// Signal any threads that are waiting to get on the bridge if the bridge is not full
+// Signal any threads waiting to get off
 void acquire_bridge(car_t* car) {
   // Get reference to the cvar that matches this car's direction
   pthread_cond_t enter_cvar;
@@ -99,12 +137,28 @@ void acquire_bridge(car_t* car) {
   }
 
   // Aquire lock to modify bridge state
-  while (pthread_mutex_lock(&(bridge->lock)) != 0) {
-    // Wait for cvar to receive signal
-    pthread_cond_wait(&enter_cvar, &(bridge->lock));
+  int can_enter_bridge = 0;
+  while (can_enter_bridge == 0) {
+    while (pthread_mutex_lock(&(bridge->lock)) != 0) {
+      // Wait for cvar to receive signal
+      pthread_cond_wait(&enter_cvar, &(bridge->lock));
+    }
+    // Lock acquired
+    // If bridge is full, release lock and try again
+    if (bridge->current_num_cars >= bridge->max_num_cars) {
+      pthread_mutex_unlock(&(bridge->lock));
+    }
+    // If bridge has cars moving in opposite direction, release lock and try again
+    else if (bridge->current_num_cars > 0 && bridge->direction != car->direction) {
+      pthread_mutex_unlock(&(bridge->lock));
+    }
+    // Otherwise, move on to board the bridge
+    else {
+      can_enter_bridge = 1;
+    }
   }
   
-  // Double-check that conditions are not broken.
+  // Double-check that conditions are not broken. Print out if conditions are violated.
   if (bridge->current_num_cars > bridge->max_num_cars) {
     printf("The bridge just collapsed :( \n");
   }
@@ -121,34 +175,29 @@ void acquire_bridge(car_t* car) {
   // Increment bridge current car count
   bridge->current_num_cars++;
 
+  // Print status
+  on_bridge(car);
+  printf("Car %d entered bridge\n", car->thread_id);
+  
   // Release the lock
   pthread_mutex_unlock(&(bridge->lock));
+
+  // Sleep to simulate crossing the bridge
+  sleep(1);
 
   // If bridge is full, only wake up cars waiting to exit
   // Otherwise, wake up a car going in the same direction, followed by the exit cvar
   if (bridge->current_num_cars < bridge->max_num_cars) {
     pthread_cond_signal(&enter_cvar);
-    
   }
   pthread_cond_signal(&(bridge->exit_bridge_cvar));
 }
 
-void on_bridge(car_t* car) {
-  // Double check that bridge direction matches current car direction
-  if (bridge->direction != car->direction) {
-    printf("Crossing car's direction does not match bridge's direction.\n");
-  }
-
-  // Print state of current car and bridge
-  int car_id = car->thread_id;
-  char car_direction[20];
-  get_direction(car->direction, car_direction);
-  int num_cars = bridge->current_num_cars;
-  char bridge_direction[20];
-  get_direction(bridge->direction, bridge_direction);
-  printf("Car #%d is on the bridge going %s. There are %d cars on the bridge going %s.\n", car_id, car_direction, num_cars, bridge_direction);
-}
-
+// Current thread blocks until it can acquire the mutex
+// Once the lock is acquired, decrement the car count, print out that the car is leaving, then:
+// If the bridge is empty, signal to both sides of the bridge that they can get on.
+// Whoever gets the lock first will set the direction so that the other side doesn't get on
+// If the bridge is not empty, signal cars waiting on the side we came from to gt on, then signal cars waiting to exit
 void exit_bridge(car_t* car) {
   // Aquire lock to modify bridge state
   while(pthread_mutex_lock(&(bridge->lock)) != 0) {
@@ -168,6 +217,8 @@ void exit_bridge(car_t* car) {
 
   // Decrement bridge's current car count
   bridge->current_num_cars--;
+
+  printf("Car %d exiting bridge\n", car->thread_id);
 
   // Release mutex
   pthread_mutex_unlock(&(bridge->lock));
@@ -192,18 +243,16 @@ void exit_bridge(car_t* car) {
 
   // If the bridge is empty, wake up opposite direction cvar, followed by same direction cvar
   else {
-    printf("Signaling next car\n");
     pthread_cond_signal(&opp_dir_cvar);
     pthread_cond_signal(&same_dir_cvar);
   }
 }
 
+// Wrapper to handle all car functions
 void handle_car(car_t* car) {
   acquire_bridge(car);
-  on_bridge(car);
   exit_bridge(car);
 }
-
 
 int main(int argc, char* argv[]) {
   // Validate parameters
@@ -247,18 +296,6 @@ int main(int argc, char* argv[]) {
       return -1;
     }
   }
-
-  /////// DEBUG
-  for (int i = 0; i < starting_num_cars; i++) {
-    if (cars[i]->direction == DIRECTION_TO_HANOVER) {
-      printf("to hanover\n");
-    }
-    else {
-      printf("to norwich\n");
-    }
-  }
-
-  //////
 
   // Kick off a thread for each car
   pthread_t threads[starting_num_cars];
